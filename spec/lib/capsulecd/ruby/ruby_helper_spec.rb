@@ -81,7 +81,43 @@ describe 'CapsuleCD::Ruby::RubyHelper', :ruby do
         updated_gemspec_data = CapsuleCD::Ruby::RubyHelper.get_gemspec_data(test_directory)
         expect(updated_gemspec_data.version.to_s).to eql('0.1.4')
 
+      end
+    end
 
+    describe 'when modifying gemspec file while packaging CapsuleCD with itself' do
+      it 'should not keep old constant from version.rb file in memory' do
+        FileUtils.copy_entry('spec/fixtures/ruby/capsulecd', test_directory)
+
+        gemspec_data = CapsuleCD::Ruby::RubyHelper.get_gemspec_data(test_directory)
+        expect(gemspec_data.version.to_s).to eql('3.2.1')
+
+        version_str = CapsuleCD::Ruby::RubyHelper.read_version_file(test_directory, gemspec_data.name)
+        next_version = CapsuleCD::Engine.new(:source => :github).send(:bump_version, SemVer.parse(gemspec_data.version.to_s))
+        expect(next_version.to_s).to eql('3.2.2')
+
+        new_version_str = version_str.gsub(/(VERSION\s*=\s*['"])[0-9\.]+(['"])/, "\\1#{next_version}\\2")
+        CapsuleCD::Ruby::RubyHelper.write_version_file(test_directory, gemspec_data.name, new_version_str)
+
+        Open3.popen3('gem build capsulecd.gemspec', chdir: test_directory) do |_stdin, stdout, stderr, external|
+          { stdout: stdout, stderr: stderr }. each do |name, stream_buffer|
+            Thread.new do
+              until (line = stream_buffer.gets).nil?
+                puts "#{name} -> #{line}"
+              end
+            end
+          end
+          # wait for process
+          external.join
+          unless external.value.success?
+            fail CapsuleCD::Error::BuildPackageFailed, 'gem build failed. Check gemspec file and dependencies'
+          end
+          unless File.exist?(test_directory + "/#{gemspec_data.name}-#{next_version.to_s}.gem")
+            fail CapsuleCD::Error::BuildPackageFailed, "gem build failed. #{gemspec_data.name}-#{next_version.to_s}.gem not found"
+          end
+        end
+
+        updated_gemspec_data = CapsuleCD::Ruby::RubyHelper.get_gemspec_data(test_directory)
+        expect(updated_gemspec_data.version.to_s).to eql('3.2.2')
 
       end
     end
