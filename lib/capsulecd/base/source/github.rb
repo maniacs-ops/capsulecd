@@ -36,7 +36,14 @@ module CapsuleCD
           c.api_endpoint = @config.source_github_api_endpoint if @config.source_github_api_endpoint
           c.web_endpoint = @config.source_github_web_endpoint if @config.source_github_web_endpoint
         end
-        @source_client = Octokit::Client.new(access_token: @config.source_github_access_token)
+        @source_client = Octokit::Client.new(
+          access_token: @config.source_github_access_token,
+          connection_options: {
+            request: {
+              timeout: 15,
+              open_timeout: 15
+            }
+        })
       end
 
       # all capsule CD processing will be kicked off via a payload. In Github's case, the payload is the webhook data.
